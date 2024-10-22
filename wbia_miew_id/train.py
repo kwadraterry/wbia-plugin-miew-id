@@ -21,8 +21,9 @@ import wandb
 
 
 class Trainer:
-    def __init__(self, config):
+    def __init__(self, config, model=None):
         self.config = config
+        self.model = model
 
     def set_seed_torch(self, seed):
         random.seed(seed)
@@ -157,7 +158,12 @@ class Trainer:
         else:
             margins = None
 
-        model = MiewIdNet(**dict(config.model_params))
+        if not self.model:
+            self.model = MiewIdNet(**dict(config.model_params))
+            print('Initialized model')
+
+        model = self.model
+            
         model.to(device)
 
         loss_fn = fetch_loss()
