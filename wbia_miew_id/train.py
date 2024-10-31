@@ -35,6 +35,7 @@ class Trainer:
 
     def run_fn(self, model, train_loader, valid_loader, criterion, optimizer, scheduler, device, checkpoint_dir, use_wandb=True, swa_model=None, swa_start=None, swa_scheduler=None):
         best_score = 0
+        best_cmc = None
         for epoch in range(self.config.engine.epochs):
             train_loss = train_fn(train_loader, model, criterion, optimizer, device, scheduler=scheduler, epoch=epoch, use_wandb=use_wandb, swa_model=swa_model, swa_start=swa_start, swa_scheduler=swa_scheduler)
 
@@ -52,6 +53,7 @@ class Trainer:
 
             if valid_score > best_score:
                 best_score = valid_score
+                best_cmc = valid_cmc
                 torch.save(model.state_dict(), f'{checkpoint_dir}/model_best.bin')
                 print('best model found for epoch {}'.format(epoch))
 
@@ -60,9 +62,9 @@ class Trainer:
             update_bn(train_loader, swa_model, device=device)
             torch.save(swa_model.state_dict(), f'{checkpoint_dir}/swa_model_{epoch}.bin')
             
-        return best_score
+        return best_score, best_cmc, model
 
-    def run(self):
+    def run(self, finetune=False):
         config = self.config
         checkpoint_dir = f"{config.checkpoint_dir}/{config.project_name}/{config.exp_name}"
         os.makedirs(checkpoint_dir, exist_ok=True)
@@ -201,9 +203,64 @@ class Trainer:
 
         write_config(config, config_path_out)
 
-        with WandbContext(config):
-            best_score = self.run_fn(model, train_loader, valid_loader, criterion, optimizer, scheduler, device, checkpoint_dir, use_wandb=config.engine.use_wandb,
-                                     swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start)
+        if finetune:
+            for param in model.parameters():
+                param.requires_grad = False
+
+            optimizer = torch.optim.Adam(list(criterion.parameters()), lr=config.scheduler_params.lr_start) 
+            print('frozen parameters')
+
+            scheduler = MiewIdScheduler(optimizer, **dict(config.scheduler_params))
+
+            if config.engine.use_swa:
+                swa_model = AveragedModel(model)
+                swa_model.to(device)
+                swa_scheduler = SWALR(optimizer=optimizer, swa_lr=config.swa_params.swa_lr)
+                swa_start = config.swa_params.swa_start
+            else:
+                swa_model = None
+                swa_scheduler = None
+                swa_start = None
+
+            write_config(config, config_path_out)
+
+            epochs_orig = self.config.engine.epochs
+            self.config.engine.epochs = 3
+            print('Finetuning Stage 1')
+            with WandbContext(config):
+                best_score, best_cmc, model = self.run_fn(model, train_loader, valid_loader, criterion, optimizer, scheduler, device, checkpoint_dir, use_wandb=config.engine.use_wandb,
+                                        swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start)
+
+                print('Finetuning Stage 2')
+                for param in model.parameters():
+                    param.requires_grad = True
+        
+                optimizer = torch.optim.Adam(list(model.parameters()) + list(criterion.parameters()), lr=config.scheduler_params.lr_start)
+                scheduler = MiewIdScheduler(optimizer, **dict(config.scheduler_params))
+        
+                if config.engine.use_swa:
+                    swa_model = AveragedModel(model)
+                    swa_model.to(device)
+                    swa_scheduler = SWALR(optimizer=optimizer, swa_lr=config.swa_params.swa_lr)
+                    swa_start = config.swa_params.swa_start
+                else:
+                    swa_model = None
+                    swa_scheduler = None
+                    swa_start = None
+        
+                write_config(config, config_path_out)
+        
+                self.config.engine.epochs = epochs_orig
+        
+
+                best_score, best_cmc, model = self.run_fn(model, train_loader, valid_loader, criterion, optimizer, scheduler, device, checkpoint_dir, use_wandb=config.engine.use_wandb,
+                                        swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start)
+
+            return best_score
+        else:
+            with WandbContext(config):
+                best_score, best_cmc, model = self.run_fn(model, train_loader, valid_loader, criterion, optimizer, scheduler, device, checkpoint_dir, use_wandb=config.engine.use_wandb,
+                                        swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start)
 
         return best_score
 
