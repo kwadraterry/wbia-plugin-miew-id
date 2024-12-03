@@ -18,7 +18,7 @@ WANDB_API_KEY={your_wanb_api_key}
 WANDB_MODE={'online'/'offline'}
 ```
 
-## Multispecies-V2 Model
+## Multispecies Models
 
 Model specs and dataset overview can be found at the [model card page for the Multispecies-v2 model](https://huggingface.co/conservationxlabs/miewid-msv2) and the [Multispecies-v3 model](https://huggingface.co/conservationxlabs/miewid-msv3)
 
