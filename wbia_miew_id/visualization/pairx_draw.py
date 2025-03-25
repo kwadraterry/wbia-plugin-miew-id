@@ -92,4 +92,6 @@ def draw_one(
     elif visualization_type == "only_colors":
         return pairx_img[pairx_height:]
 
+    pairx_img = cv2.cvtColor(pairx_img, cv2.COLOR_BGR2RGB)
+
     return pairx_img
