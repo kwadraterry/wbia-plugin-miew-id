@@ -23,6 +23,7 @@ from wbia_miew_id.models import get_model
 from wbia_miew_id.datasets import PluginDataset, get_test_transforms
 from wbia_miew_id.metrics import pred_light, compute_distance_matrix, eval_onevsall
 from wbia_miew_id.visualization import draw_batch
+from wbia_miew_id.visualization.pairx_draw import draw_one as draw_one_pairx
 
 
 (print, rrr, profile) = ut.inject2(__name__)
@@ -272,31 +273,57 @@ class MiewIdRequest(dt.base.VsOneSimilarityRequest):
         chips = ibs.get_annot_chips(aid_list)
         return chips
 
-    def render_single_result(request, cm, aid, **kwargs):
-        # Returns match images side-by-side without activation overlay
+    def render_with_visualization(request, cm, aid, **kwargs):
+        depc = request.depc
+        ibs = depc.controller
+
+        species = ibs.get_annot_species_texts(aid)
+        model, config, (model_url, config_url) = read_config_and_load_model(species)
+
+        aid_list = [cm.qaid, aid]
+        test_loader, test_dataset = _load_data(ibs, aid_list, config, batch_size=1)
+
+        out_image = draw_one_pairx(
+            config.engine.device,
+            test_loader,
+            model,
+            config.data.crop_bbox,
+            visualization_type="lines_and_colors",
+            layer_key="backbone.blocks.3",
+            k_lines=20,
+            k_colors=10,
+        )
+        return out_image
+
+    def render_without_visualization(request, cm, aid, **kwargs):
         overlay = kwargs.get('draw_fmatches')
         chips = request.get_fmatch_overlayed_chip(
             [cm.qaid, aid], overlay=overlay, config=request.config
         )
-        out_image = vt.stack_image_list(chips)
+        return vt.stack_image_list(chips)
 
-        return out_image
+    def render_single_result(request, cm, aid, **kwargs):
+        use_gradcam = kwargs.get('use_gradcam', False)
+        if use_gradcam:
+            return request.render_with_visualization(cm, aid, **kwargs)
+        else:
+            return request.render_without_visualization(cm, aid, **kwargs)
 
-    def render_batch_result(request, cm, aids):
+    # def render_batch_result(request, cm, aids):
 
-        depc = request.depc
-        ibs = depc.controller
+    #     depc = request.depc
+    #     ibs = depc.controller
 
-        # Load config
-        species = ibs.get_annot_species_texts(aids)[0]
-        model, config, (model_url, config_url) = read_config_and_load_model(species)
-        # This list has to be in the format of [query_aid, db_aid]
-        aid_list = np.concatenate(([cm.qaid],  aids))
-        test_loader, test_dataset = _load_data(ibs, aid_list, config)
+    #     # Load config
+    #     species = ibs.get_annot_species_texts(aids)[0]
+    #     model, config, (model_url, config_url) = read_config_and_load_model(species)
+    #     # This list has to be in the format of [query_aid, db_aid]
+    #     aid_list = np.concatenate(([cm.qaid],  aids))
+    #     test_loader, test_dataset = _load_data(ibs, aid_list, config)
 
-        batch_images = draw_batch(config, test_loader,  model, images_dir = '', method='gradcam_plus_plus', eigen_smooth=False, show=False)
+    #     batch_images = draw_batch(config, test_loader,  model, images_dir = '', method='gradcam_plus_plus', eigen_smooth=False, show=False)
 
-        return batch_images
+    #     return batch_images
     
     def postprocess_execute(request, table, parent_rowids, rowids, result_list):
         qaid_list, daid_list = list(zip(*parent_rowids))
@@ -418,14 +445,6 @@ def _load_model(config, model_url, use_dataparallel=True):
     r"""
     Load a model based on config file
     """
-    # print('Building model: {}'.format(config.model.name))
-    # model = build_model(
-    #     name=config.model.name,
-    #     num_classes=config.model.num_train_classes,
-    #     loss=config.loss.name,
-    #     pretrained=config.model.pretrained,
-    #     use_gpu=config.use_gpu,
-    # )
 
     # Download the model weights
     model_fname = model_url.split('/')[-1]
@@ -437,17 +456,12 @@ def _load_model(config, model_url, use_dataparallel=True):
 
     model = get_model(config, model_path)
 
-    # if config.use_gpu:
-    #    model.load_state_dict(torch.load(model_path))
-    # else:
-    #    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
-    # print('Loaded model from {}'.format(model_path))
     if config.use_gpu and use_dataparallel:
         model = torch.nn.DataParallel(model).cuda()
     return model
 
 
-def _load_data(ibs, aid_list, config, multithread=False):
+def _load_data(ibs, aid_list, config, multithread=False, batch_size=None):
     r"""
     Load data, preprocess and create data loaders
     """
@@ -478,9 +492,11 @@ def _load_data(ibs, aid_list, config, multithread=False):
     else:
         num_workers = 0
 
+    batch_size = batch_size if batch_size is not None else config.test.batch_size
+
     dataloader = torch.utils.data.DataLoader(
         dataset,
-        batch_size=config.test.batch_size,
+        batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
@@ -640,9 +656,6 @@ def miew_id_new_accuracy(ibs, aid_list, min_sights=3, max_sights=10):
     return accuracy
 
 
-# The following functions are comiew_idd from TBD v1 because these functions
-# are agnostic tot eh method of computing embeddings:
-# https://github.com/WildMeOrg/wbia-plugin-miew_id/wbia_miew_id/_plugin.py
 def _db_labels_for_miew_id(ibs, daid_list):
     db_labels = ibs.get_annot_name_texts(daid_list, distinguish_unknowns=True)
     # db_auuids = ibs.get_annot_name_rowids(daid_list)
@@ -654,14 +667,6 @@ def _db_labels_for_miew_id(ibs, daid_list):
     db_labels = np.array(db_labels)
     return db_labels
 
-
-
-# def distance_to_score(distance, norm=2.0):
-#     # score = 1 / (1 + distance)
-#     score = np.exp(-distance / norm)
-#     return score
-
-# for cosine distance
 def distance_to_score(distance):
     score = (2 - distance) / 2
     score = np.float64(score)
