@@ -150,7 +150,7 @@ class Evaluator:
         render_query_results(model, test_dataset, df_test, match_results, device,
                              k=k, valid_batch_size=valid_batch_size, output_dir=output_dir)
 
-    def evaluate(self):
+    def evaluate(self, return_outputs=False):
         test_loader, df_test = self.preprocess_test_data(
             self.anno_path, self.name_keys, self.viewpoint_list, 
             self.use_full_image_path, self.images_dir, self.image_size, self.crop_bbox, 
@@ -170,7 +170,10 @@ class Evaluator:
             self.visualize_results(test_outputs, df_test, test_loader.dataset, self.model, self.device,
                                   k=5, valid_batch_size=self.valid_batch_size,output_dir=self.visualization_output_dir )
 
-        return test_score
+        if return_outputs:
+            return test_score, cmc, test_outputs, df_test
+        else:
+            return test_score
 
 if __name__ == '__main__':
     args = parse_args()
