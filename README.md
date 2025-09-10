@@ -221,6 +221,6 @@ A config file path can be set by:
 }
 ```
 
-## Citation
+## Copyright
 Copyright Conservation X Labs 2025.
 
