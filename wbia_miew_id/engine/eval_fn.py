@@ -116,9 +116,11 @@ def log_results(mAP, cmc, tag='Avg', use_wandb=True):
     print("CMC curve")
     for r in ranks:
         print(f"Rank-{r:<3}: {cmc[r - 1]:.1%}")
-        if use_wandb: wandb.log({f"{tag} - Rank-{r:<3}": cmc[r - 1]})
+        if use_wandb and wandb.run is not None: 
+            wandb.log({f"{tag} - Rank-{r:<3}": cmc[r - 1]})
     
-    if use_wandb: wandb.log({f"{tag} - mAP": mAP})
+    if use_wandb and wandb.run is not None: 
+        wandb.log({f"{tag} - mAP": mAP})
 
 def eval_fn(data_loader, model, device, use_wandb=True, return_outputs=False):
 

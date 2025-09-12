@@ -1,11 +1,13 @@
 #!/bin/bash
+#SBATCH --account=PAS2136
 #SBATCH --job-name=miew-id-train
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=4
 #SBATCH --gres=gpu:4
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --time=24:00:00
+#SBATCH --mem=150G
+#SBATCH --time=10:00:00
 #SBATCH --partition=gpu
 #SBATCH --output=logs/train_%j.out
 #SBATCH --error=logs/train_%j.err
@@ -36,7 +38,7 @@ echo "Tasks per node: $SLURM_NTASKS_PER_NODE"
 echo "Total tasks: $SLURM_NTASKS"
 
 # Run the training script
-srun python -u wbia_miew_id/train_parallel.py \
-    --config configs/config_zebra.yaml \
+srun python -m wbia_miew_id.train_parallel \
+    --config wbia_miew_id/configs/config_zebra.yaml \
     --nodes $SLURM_JOB_NUM_NODES \
     --gpus-per-node $SLURM_NTASKS_PER_NODE
