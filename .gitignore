@@ -13,6 +13,9 @@ wbia_miew_id/configs/*
 *.csv
 *.db
 *.png
+.venv
+output/*
+.python-version
 wbia_miew_id/splits/
 wbia_miew_id/helpers/split/configs/config_*.yaml
 wbia_miew_id.egg*

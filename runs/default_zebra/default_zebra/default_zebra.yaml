@@ -1,0 +1,71 @@
+checkpoint_dir: ./runs
+comment: Experiment comment goes here
+data:
+  crop_bbox: true
+  image_size:
+  - 480
+  - 480
+  images_dir: /fs/ess/PAS2136/ggr_data/image_data/GZCD/images
+  name_keys:
+  - name
+  - viewpoint
+  preprocess_images:
+    apply: false
+    force_apply: false
+    preprocessed_dir: null
+  test:
+    anno_path: /fs/ess/PAS2136/ggr_data/image_data/GZCD/annotations/miewid/instances_test2024.json
+    checkpoint_path: ./runs/default_zebra/default_zebra/model_best.bin
+    eval_groups:
+    - species
+    n_filter_min: 2
+    n_subsample_max: 30
+  train:
+    anno_path: /fs/ess/PAS2136/ggr_data/image_data/GZCD/annotations/miewid/instances_train2024.json
+    n_filter_min: 4
+    n_subsample_max: null
+  use_full_image_path: false
+  val:
+    anno_path: /fs/ess/PAS2136/ggr_data/image_data/GZCD/annotations/miewid/instances_val2024.json
+    n_filter_min: 2
+    n_subsample_max: 10
+  viewpoint_list: null
+engine:
+  device: cuda
+  epochs: 30
+  loss_module: softmax
+  num_workers: 8
+  seed: 42
+  train_batch_size: 6
+  use_swa: false
+  use_wandb: false
+  valid_batch_size: 12
+exp_name: default_zebra
+model_params:
+  dropout: 0.0
+  fc_dim: 2048
+  k: 2
+  loss_module: arcface_subcenter_dynamic
+  ls_eps: 0.0
+  margin: 0.5
+  model_name: efficientnetv2_rw_m
+  n_classes: 220
+  pretrained: true
+  s: 30.0
+  theta_zero: 0.785
+  use_fc: false
+project_name: default_zebra
+scheduler_params:
+  lr_decay: 0.8
+  lr_max: 0.001
+  lr_min: 9.0e-06
+  lr_ramp_ep: 15
+  lr_start: 1.0e-05
+  lr_sus_ep: 0
+swa_params:
+  swa_lr: 0.00014
+  swa_start: 21
+test:
+  batch_size: 8
+  fliplr: false
+  fliplr_view: []
