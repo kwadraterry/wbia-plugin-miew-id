@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=miew-id-train
-#SBATCH --nodes=2
-#SBATCH --ntasks-per-node=4
-#SBATCH --gres=gpu:4
-#SBATCH --cpus-per-task=8
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=2
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=3
 #SBATCH --mem=64G
 #SBATCH --time=24:00:00
 #SBATCH --partition=gpu
