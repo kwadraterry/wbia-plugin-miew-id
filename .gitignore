@@ -8,8 +8,6 @@ TODO.md
 wbia_miew_id/*.ipynb
 wbia_miew_id/*.pkl
 wbia_miew_id/.ipynb_checkpoints*
-wbia_miew_id/configs/*
-!wbia_miew_id/configs/default_config_new.yaml
 *.csv
 *.db
 *.png

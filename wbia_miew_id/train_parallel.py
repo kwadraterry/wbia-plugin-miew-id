@@ -78,46 +78,42 @@ class Trainer:
         return best_score, best_cmc, model
 
     def setup_distributed(self):
-        """Initialize distributed training"""
-        if 'SLURM_PROCID' in os.environ:
-            # SLURM environment
-            rank = int(os.environ['SLURM_PROCID'])
-            world_size = int(os.environ['SLURM_NTASKS'])
-            local_rank = int(os.environ['SLURM_LOCALID'])
-            
-            # Get master address and port from SLURM
-            node_list = os.environ['SLURM_NODELIST']
-            master_addr = node_list.split(',')[0].strip('[')
-            if '[' in master_addr:
-                master_addr = master_addr.split('[')[0]
-            
-            os.environ['MASTER_ADDR'] = master_addr
-            os.environ['MASTER_PORT'] = '29500'
-            os.environ['RANK'] = str(rank)
-            os.environ['LOCAL_RANK'] = str(local_rank)
-            os.environ['WORLD_SIZE'] = str(world_size)
-            
+        # Prefer torchrun env if present
+        if os.getenv("LOCAL_RANK") is not None:
+            rank = int(os.environ["RANK"])
+            world_size = int(os.environ["WORLD_SIZE"])
+            local_rank = int(os.environ["LOCAL_RANK"])
+        elif os.getenv("SLURM_PROCID") is not None:
+            rank = int(os.environ["SLURM_PROCID"])
+            world_size = int(os.environ["SLURM_NTASKS"])
+            local_rank = int(os.environ["SLURM_LOCALID"])
+            # Set master for SLURM case
+            node_list = os.environ["SLURM_NODELIST"]
+            master_addr = node_list.split(",")[0].split("[")[0]
+            os.environ["MASTER_ADDR"] = os.environ.get("MASTER_ADDR", master_addr)
+            os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "29500")
+            os.environ["RANK"] = str(rank)
+            os.environ["WORLD_SIZE"] = str(world_size)
+            os.environ["LOCAL_RANK"] = str(local_rank)
         else:
-            # Standard distributed setup
-            rank = int(os.environ.get('RANK', 0))
-            world_size = int(os.environ.get('WORLD_SIZE', 1))
-            local_rank = int(os.environ.get('LOCAL_RANK', 0))
-        
+            rank = int(os.environ.get("RANK", 0))
+            world_size = int(os.environ.get("WORLD_SIZE", 1))
+            local_rank = int(os.environ.get("LOCAL_RANK", 0))
+
         self.rank = rank
         self.world_size = world_size
         self.local_rank = local_rank
         self.is_distributed = world_size > 1
-        
+
         if self.is_distributed:
-            dist.init_process_group(
-                backend='nccl',
-                init_method='env://',
-                world_size=world_size,
-                rank=rank
-            )
-            torch.cuda.set_device(local_rank)
-        
+            dist.init_process_group(backend="nccl", init_method="env://",
+                                world_size=world_size, rank=rank)
+        # Avoid invalid device ordinal if visibility is restricted
+            dev_count = torch.cuda.device_count()
+            torch.cuda.set_device(local_rank if local_rank < dev_count else 0)
+
         return rank, world_size, local_rank
+
 
     def run(self, finetune=False):
         # Setup distributed training

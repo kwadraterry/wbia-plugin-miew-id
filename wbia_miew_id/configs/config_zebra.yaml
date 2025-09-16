@@ -1,0 +1,147 @@
+# exp_name: default_zebra
+# project_name: default_zebra
+# checkpoint_dir: ./runs
+# comment: Experiment comment goes here
+# data:
+#   images_dir: /fs/ess/PAS2136/ggr_data/image_data/GZCD/images
+#   use_full_image_path: false
+#   preprocess_images: 
+#     apply: false
+#     force_apply: false
+#     preprocessed_dir: null
+#   viewpoint_list: null
+#   name_keys: ['name', 'viewpoint']
+#   crop_bbox: true
+#   image_size:
+#     - 480
+#     - 480
+#   test:
+#     anno_path: /fs/ess/PAS2136/ggr_data/image_data/GZCD/annotations/miewid/instances_test2024.json
+#     checkpoint_path: ''
+#     eval_groups:
+#     - species
+#     n_filter_min: 2
+#     n_subsample_max: 30
+#   train:
+#     anno_path: /fs/ess/PAS2136/ggr_data/image_data/GZCD/annotations/miewid/instances_train2024.json
+#     n_filter_min: 4
+#     n_subsample_max: null
+#   val:
+#     anno_path: /fs/ess/PAS2136/ggr_data/image_data/GZCD/annotations/miewid/instances_val2024.json
+#     n_filter_min: 2
+#     n_subsample_max: 10
+
+# engine:
+#   num_workers: 8
+#   train_batch_size: 6
+#   valid_batch_size: 12
+#   epochs: 30
+#   seed: 42
+#   device: cuda
+#   use_wandb: false
+#   use_swa: false
+
+# scheduler_params:
+#   lr_start: 1.e-5
+#   lr_max: 1.e-3
+#   lr_min: 9.e-6
+#   lr_ramp_ep: 15
+#   lr_sus_ep: 0
+#   lr_decay: 0.8
+
+# model_params:
+#   model_name: efficientnetv2_rw_m
+#   use_fc: false
+#   fc_dim: 2048
+#   dropout: 0.0
+#   loss_module: arcface_subcenter_dynamic
+#   s: 30.0
+#   margin: 0.50
+#   ls_eps: 0.0
+#   theta_zero: 0.785
+#   pretrained: true
+#   n_classes: 865 
+ 
+
+# swa_params:
+#   swa_lr: 0.00014
+#   swa_start: 21
+
+# test:
+#   fliplr: false
+#   fliplr_view: []
+#   batch_size: 8
+
+
+
+exp_name: test_run_miewid_hackathon_exp_1_sept_16_ddp
+project_name: hackathon_miewid_sept_16_ddp
+checkpoint_dir: ./runs
+comment: This is the first run of miewid
+data:
+  images_dir: /fs/ess/PAS2136/ggr_data/image_data/GZCD/images
+  use_full_image_path: false
+  preprocess_images: 
+    apply: false
+    force_apply: false
+    preprocessed_dir: null
+  viewpoint_list: ['right', 'left']
+  name_keys: ['name_viewpoint']
+  crop_bbox: true
+  image_size:
+    - 480
+    - 480
+  test:
+    anno_path: /fs/ess/PAS2136/ggr_data/image_data/GZCD/annotations/miewid/instances_test2024.json
+    checkpoint_path: /users/PAS2136/upadha2/miew_id_experiments/model_best.bin
+    eval_groups: []
+    n_filter_min: 2
+    n_subsample_max: 100
+  train:
+    anno_path: /fs/ess/PAS2136/ggr_data/image_data/GZCD/annotations/miewid/instances_train2024.json
+    n_filter_min: 2
+    n_subsample_max: 100
+  val:
+    anno_path: /fs/ess/PAS2136/ggr_data/image_data/GZCD/annotations/miewid/instances_val2024.json
+    n_filter_min: 2
+    n_subsample_max: 100
+
+engine:
+  num_workers: 0
+  train_batch_size: 4
+  valid_batch_size: 8
+  epochs: 10
+  seed: 42
+  device: cuda
+  use_wandb: false
+  use_swa: false
+
+scheduler_params:
+  lr_start: 3.510988205019138e-05
+  lr_max: 0.0003510988205019138
+  lr_min: 1.755494102509569e-05
+  lr_ramp_ep: 15
+  lr_sus_ep: 0
+  lr_decay: 0.8
+
+model_params:
+  model_name: efficientnetv2_rw_m
+  use_fc: false
+  fc_dim: 2048
+  dropout: 0.0
+  loss_module: arcface_subcenter_dynamic       #elastic_arcface
+  s: 40.27228179427104
+  margin: 0.3035845476844968
+  ls_eps: 0.0
+  theta_zero: 0.785
+  pretrained: true
+  n_classes: 2501
+
+test:
+  fliplr: false
+  fliplr_view: []
+  batch_size: 8
+
+swa_params:
+  swa_lr: 0.00014
+  swa_start: 21

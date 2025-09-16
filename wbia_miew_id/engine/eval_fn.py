@@ -5,58 +5,46 @@ import numpy as np
 import wandb
 
 from wbia_miew_id.metrics import AverageMeter, compute_distance_matrix, compute_calibration, eval_onevsall, topk_average_precision, precision_at_k, get_accuracy
-from torch.cuda.amp import autocast  
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.cuda.amp import autocast
+
+def _unwrap(model):
+    return model.module if isinstance(model, DDP) else model
 
 def extract_embeddings(data_loader, model, device):
-    model.eval()
+    base = _unwrap(model)
+    base.eval()
     tk0 = tqdm(data_loader, total=len(data_loader))
-    embeddings = []
-    labels = []
-    
+    embeddings, labels = [], []
     with torch.no_grad():
         for batch in tk0:
-            with autocast():
-                batch_embeddings = model.extract_feat(batch["image"].to(device))
-            
+            with autocast(enabled=torch.cuda.is_available()):
+                batch_embeddings = base.extract_feat(batch["image"].to(device, non_blocking=True))
             batch_embeddings = batch_embeddings.detach().cpu().numpy()
-            
             image_idx = batch["image_idx"].tolist()
-            batch_embeddings_df = pd.DataFrame(batch_embeddings, index=image_idx)
-            embeddings.append(batch_embeddings_df)
-
-            batch_labels = batch['label'].tolist()
-            labels.extend(batch_labels)
-            
-    embeddings = pd.concat(embeddings)
-    embeddings = embeddings.values
-
+            embeddings.append(pd.DataFrame(batch_embeddings, index=image_idx))
+            labels.extend(batch['label'].tolist())
+    embeddings = pd.concat(embeddings).values
     assert not np.isnan(embeddings).sum(), "NaNs found in extracted embeddings"
-
     return embeddings, labels
 
 def extract_logits(data_loader, model, device):
-    model.eval()
+    base = _unwrap(model)
+    base.eval()
     tk0 = tqdm(data_loader, total=len(data_loader))
-    logits = []
-    labels = []
-    
+    logits, labels = [], []
     with torch.no_grad():
         for batch in tk0:
-            batch_logits = model.extract_logits(batch["image"].to(device), batch["label"].to(device)).detach().cpu()
-
+            with autocast(enabled=torch.cuda.is_available()):
+                batch_logits = base.extract_logits(
+                    batch["image"].to(device, non_blocking=True),
+                    batch["label"].to(device, non_blocking=True),
+                ).detach().cpu()
             image_idx = batch["image_idx"].tolist()
-            batch_logits_df = pd.DataFrame(batch_logits.numpy(), index=image_idx)
-            logits.append(batch_logits_df)
-
-            batch_labels = batch['label'].tolist()
-            labels.extend(batch_labels)
-            
-            
-    logits = pd.concat(logits)
-    logits = logits.values
-
+            logits.append(pd.DataFrame(batch_logits.numpy(), index=image_idx))
+            labels.extend(batch['label'].tolist())
+    logits = pd.concat(logits).values
     assert not np.isnan(logits).sum(), "NaNs found in extracted logits"
-
     return logits, labels
 
 def calculate_matches(embeddings, labels, embeddings_db=None, labels_db=None, dist_metric='cosine', ranks=list(range(1, 21)), mask_matrix=None):
