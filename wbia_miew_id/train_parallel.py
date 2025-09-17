@@ -834,6 +834,9 @@ class CombinedModelWithCriterion(torch.nn.Module):
     def forward(self, *args, **kwargs):
         embeddings = self.model(*args, **kwargs)
         return embeddings
+    
+    def extract_feat(self, *args, **kwargs):
+        return self.model.extract_feat(*args, **kwargs)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Load configuration file.")
