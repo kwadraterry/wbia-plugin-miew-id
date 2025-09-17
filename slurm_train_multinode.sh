@@ -8,8 +8,8 @@
 #SBATCH --cpus-per-task=34              # 17 CPUs/GPU × 2
 #SBATCH --mem=64G
 #SBATCH --time=10:00:00
-#SBATCH --output=/users/PAS2136/upadha2/wbia-plugin-miew-id/logs/train_%j.out
-#SBATCH --error=/users/PAS2136/upadha2/wbia-plugin-miew-id/logs/train_%j.err
+#SBATCH --output=wbia-plugin-miew-id/logs/train_%j.out
+#SBATCH --error=wbia-plugin-miew-id/logs/train_%j.err
 
 # Load virtual environment
 source .venv/bin/activate 

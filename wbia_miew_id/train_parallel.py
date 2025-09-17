@@ -596,7 +596,7 @@ class Trainer:
         print(f"[Rank {self.rank}] Setup done. local_rank={self.local_rank}, world_size={self.world_size}")
         if self._is_main():
             print("[Main] NCCL env:",
-                  {k: os.environ.get(k) for k in ["NCCL_DEBUG","NCCL_ASYNC_ERROR_HANDLING","NCCL_IB_DISABLE","NCCL_SOCKET_IFNAME","NCCL_P2P_DISABLE","NCCL_SHM_DISABLE"]})
+                    {k: os.environ.get(k) for k in ["NCCL_DEBUG","NCCL_ASYNC_ERROR_HANDLING","NCCL_IB_DISABLE","NCCL_SOCKET_IFNAME","NCCL_P2P_DISABLE","NCCL_SHM_DISABLE"]})
 
         config_path_out = f'{checkpoint_dir}/{config.exp_name}.yaml'
         config.data.test.checkpoint_path = f'{checkpoint_dir}/model_best.bin'
@@ -617,9 +617,6 @@ class Trainer:
             images_dir=config.data.images_dir,
         )
         print(f"[Rank {self.rank}] TRAIN preprocess_data done in {time.time()-t0:.2f}s | shape={getattr(df_train,'shape',None)}")
-
-        print(f"[Rank {self.rank}] Starting VAL preprocess_data: {config.data.val.anno_path}")
-        t0 = time.time()
         df_val = preprocess_data(
             config.data.val.anno_path,
             name_keys=config.data.name_keys,
@@ -661,7 +658,7 @@ class Trainer:
             df_val = load_preprocessed_mapping(df_val, preprocess_dir_images)
             crop_bbox = False
 
-        # -------------------- Datasets --------------------
+        # -------------------- Datasets and Loaders --------------------
         print(f"[Rank {self.rank}] Creating datasets...")
         train_dataset = MiewIdDataset(
             csv=df_train,
@@ -679,7 +676,6 @@ class Trainer:
         )
         print(f"[Rank {self.rank}] Datasets ready | train={len(train_dataset)} val={len(valid_dataset)}")
 
-        # -------------------- Samplers / Loaders (safe mode) --------------------
         if self.is_distributed:
             train_sampler = DistributedSampler(
                 train_dataset, num_replicas=world_size, rank=rank, shuffle=True
@@ -689,9 +685,8 @@ class Trainer:
             train_sampler = None
             valid_sampler = None
 
-        # --- UPDATED: when num_workers=0, timeout MUST be 0 (PyTorch assertion) ---
         num_workers = 0
-        timeout = 0  # <- critical fix
+        timeout = 0
         pin_memory = False
 
         print(f"[Rank {self.rank}] Creating DataLoaders (safe mode: num_workers={num_workers}, timeout={timeout})...")
@@ -719,7 +714,6 @@ class Trainer:
             )
         else:
             valid_loader = None
-
         print(f"[Rank {self.rank}] DataLoaders created")
 
         # -------------------- Device --------------------
@@ -729,57 +723,32 @@ class Trainer:
             device = torch.device(config.engine.device)
         print(f"[Rank {self.rank}] Using device: {device}")
 
-        # -------------------- Model / Loss --------------------
+        # -------------------- Model and Criterion Wrapper --------------------
+        print(f"[Rank {self.rank}] Creating model and criterion wrapper...")
+
         if config.model_params.n_classes != n_train_classes:
             print(f"WARNING: Overriding n_classes in config ({config.model_params.n_classes}) "
-                  f"which is different from actual n_train_classes in the dataset - ({n_train_classes}).")
+                    f"which is different from actual n_train_classes in the dataset - ({n_train_classes}).")
             config.model_params.n_classes = n_train_classes
 
-        if config.model_params.loss_module == 'arcface_subcenter_dynamic':
-            margin_min = 0.2
-            margin_max = config.model_params.margin
-            tmp = np.sqrt(1 / np.sqrt(df_train['name'].value_counts().sort_index().values))
-            margins = (tmp - tmp.min()) / (tmp.max() - tmp.min()) * (margin_max - margin_min) + margin_min
-        else:
-            margins = None
+        # Create the backbone model
+        self.model = MiewIdNet(**dict(config.model_params))
+        final_in_features = self.model.final_in_features
 
-        if not self.model:
-            self.model = MiewIdNet(**dict(config.model_params))
-            if self._is_main():
-                print('Initialized model')
-
-        model = self.model.to(device)
-        print(f"[Rank {self.rank}] Model moved to device")
-
-        # ---- NCCL sanity BEFORE DDP ----
-        self._sanity_allreduce_nccl(device)
-
-        # Also run a CPU/Gloo control test (will succeed even if NCCL is blocked)
-        self._sanity_allreduce_gloo()
-
-        # ---- Wrap with DDP (simple flags) ----
-        if self.is_distributed:
-            model = DDP(
-                model,
-                device_ids=[self.local_rank if self.local_rank < torch.cuda.device_count() else 0],
-                output_device=(self.local_rank if self.local_rank < torch.cuda.device_count() else 0),
-                broadcast_buffers=False,
-                find_unused_parameters=False,
-                gradient_as_bucket_view=True,
-            )
-            print(f"[Rank {self.rank}] DDP wrapper complete")
-
+        # Create the criterion based on the config
         loss_fn = fetch_loss()
-
         if config.model_params.loss_module == 'elastic_arcface':
-            final_in_features = model.module.final_in_features if self.is_distributed else model.final_in_features
             criterion = ElasticArcFace(loss_fn=loss_fn, in_features=final_in_features,
-                                       out_features=config.model_params.n_classes).to(device)
-
+                                        out_features=config.model_params.n_classes)
         elif config.model_params.loss_module == 'arcface_subcenter_dynamic':
-            if margins is None:
-                margins = [0.3] * n_train_classes
-            final_in_features = model.module.final_in_features if self.is_distributed else model.final_in_features
+            margins = None
+            if hasattr(config.model_params, 'loss_config') and 'dynamic_margin' in config.model_params.loss_config and config.model_params.loss_config.dynamic_margin:
+                margin_min = 0.2
+                margin_max = config.model_params.margin
+                tmp = np.sqrt(1 / np.sqrt(df_train['name'].value_counts().sort_index().values))
+                margins = (tmp - tmp.min()) / (tmp.max() - tmp.min()) * (margin_max - margin_min) + margin_min
+            else:
+                margins = [config.model_params.margin] * n_train_classes
             criterion = ArcFaceSubCenterDynamic(
                 loss_fn=loss_fn,
                 embedding_dim=final_in_features,
@@ -787,18 +756,41 @@ class Trainer:
                 margins=margins,
                 s=config.model_params.s,
                 k=config.model_params.k
-            ).to(device)
+            )
         else:
             raise NotImplementedError("Loss module not recognized")
 
+        # Combine the backbone and the criterion into a single module
+        model_with_criterion = CombinedModelWithCriterion(self.model, criterion).to(device)
+
+        # ---- NCCL sanity BEFORE DDP ----
+        self._sanity_allreduce_nccl(device)
+        self._sanity_allreduce_gloo()
+
+        # ---- Wrap with DDP (simple flags) ----
+        if self.is_distributed:
+            model = DDP(
+                model_with_criterion,
+                device_ids=[self.local_rank if self.local_rank < torch.cuda.device_count() else 0],
+                output_device=(self.local_rank if self.local_rank < torch.cuda.device_count() else 0),
+                broadcast_buffers=False,
+                find_unused_parameters=False,
+                gradient_as_bucket_view=True,
+            )
+            print(f"[Rank {self.rank}] DDP wrapper complete")
+        else:
+            model = model_with_criterion
+
         optimizer = torch.optim.Adam(
-            list(model.parameters()) + list(criterion.parameters()),
+            model.parameters(), # Optimize ALL parameters of the combined model
             lr=config.scheduler_params.lr_start
         )
         scheduler = MiewIdScheduler(optimizer, **dict(config.scheduler_params))
 
+        # -------------------- SWA and W&B --------------------
         if config.engine.use_swa:
-            swa_model = AveragedModel(model)
+            # SWA model also needs to be the combined one
+            swa_model = AveragedModel(model.module if self.is_distributed else model)
             swa_model.to(device)
             swa_scheduler = SWALR(optimizer=optimizer, swa_lr=config.swa_params.swa_lr)
             swa_start = config.swa_params.swa_start
@@ -815,13 +807,13 @@ class Trainer:
         if use_wandb_context:
             with WandbContext(config):
                 best_score, best_cmc, model = self.run_fn(
-                    model, train_loader, valid_loader, criterion, optimizer, scheduler,
+                    model, train_loader, valid_loader, model.module.criterion if self.is_distributed else model.criterion, optimizer, scheduler,
                     device, checkpoint_dir, use_wandb=config.engine.use_wandb,
                     swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start
                 )
         else:
             best_score, best_cmc, model = self.run_fn(
-                model, train_loader, valid_loader, criterion, optimizer, scheduler,
+                model, train_loader, valid_loader, model.module.criterion if self.is_distributed else model.criterion, optimizer, scheduler,
                 device, checkpoint_dir, use_wandb=False,
                 swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start
             )
@@ -833,6 +825,15 @@ class Trainer:
 
         return best_score
 
+class CombinedModelWithCriterion(torch.nn.Module):
+    def __init__(self, model, criterion):
+        super().__init__()
+        self.model = model
+        self.criterion = criterion
+
+    def forward(self, *args, **kwargs):
+        embeddings = self.model(*args, **kwargs)
+        return embeddings
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Load configuration file.")
